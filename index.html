@@ -1,0 +1,1471 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>斜面上的物体受力分析 · 3D 交互演示</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23070d16'/%3E%3Cpath d='M4 26 H28 L28 8 Z' fill='%232d4a66'/%3E%3Crect x='14' y='9' width='6.6' height='6.6' fill='%23ff7a1a'/%3E%3C/svg%3E">
+<style>
+:root{
+  --bg1:#0c1828;
+  --bg2:#050a12;
+  --ink:#f2f9ff;
+  --ink2:rgba(206,222,238,.86);
+  --ink3:rgba(150,175,200,.74);
+  --ink4:rgba(140,165,190,.55);
+  --cyan:#39c6ff;
+  --cyan2:rgba(57,198,255,.85);
+  --orange:#ff7a1a;
+  --orange2:#ff9a50;
+  --red:#ff5069;
+  --green:#4ee08d;
+  --hair:rgba(120,160,200,.14);
+  --hair2:rgba(120,160,200,.26);
+  --font:"Microsoft YaHei","PingFang SC","Hiragino Sans GB","Noto Sans SC",system-ui,sans-serif;
+  --mono:"Cascadia Mono",Consolas,"SFMono-Regular",ui-monospace,monospace;
+  --math:"Cambria Math",Georgia,"Times New Roman",serif;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{
+  background:#03060a;
+  color:var(--ink);
+  font-family:var(--font);
+  -webkit-font-smoothing:antialiased;
+  overflow:hidden;
+}
+button{font-family:inherit}
+
+/* ============ 舞台：1280×720，等比缩放到视口 ============ */
+#deck{
+  position:fixed;inset:0;
+  display:grid;place-items:center;
+  background:
+    radial-gradient(120% 90% at 50% 0%,#08111c 0%,#03060a 70%);
+}
+#stage{
+  position:relative;
+  width:1280px;height:720px;
+  transform-origin:center center;
+  background:linear-gradient(150deg,var(--bg1) 0%,var(--bg2) 68%);
+  overflow:hidden;
+  box-shadow:0 40px 120px -40px rgba(0,0,0,.95);
+}
+/* 背景层：网格 + 柔光，缓慢漂移 */
+.bgGrid{
+  position:absolute;inset:-60px;
+  background-image:
+    linear-gradient(rgba(90,150,210,.062) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(90,150,210,.062) 1px,transparent 1px);
+  background-size:80px 80px;
+  -webkit-mask-image:radial-gradient(130% 100% at 50% 32%,#000 8%,transparent 78%);
+  mask-image:radial-gradient(130% 100% at 50% 32%,#000 8%,transparent 78%);
+  animation:drift 48s linear infinite;
+  pointer-events:none;
+}
+@keyframes drift{to{background-position:80px 80px,80px 80px}}
+.bgGlow{
+  position:absolute;inset:0;pointer-events:none;
+  background:
+    radial-gradient(46% 40% at 78% 14%,rgba(38,86,140,.30) 0%,rgba(6,12,20,0) 70%),
+    radial-gradient(40% 44% at 12% 88%,rgba(255,122,26,.055) 0%,rgba(6,12,20,0) 72%);
+}
+.bgVig{
+  position:absolute;inset:0;pointer-events:none;
+  background:radial-gradient(120% 120% at 50% 50%,transparent 52%,rgba(0,0,0,.42) 100%);
+}
+
+/* ============ 幻灯片与转场 ============ */
+.slide{
+  position:absolute;inset:0;
+  opacity:0;
+  pointer-events:none;
+  transition:opacity .48s cubic-bezier(.4,0,.2,1),transform .55s cubic-bezier(.4,0,.2,1);
+  transform:translateY(10px) scale(.995);
+}
+.slide.on{opacity:1;pointer-events:auto;transform:none}
+.slide .anim{opacity:0;transform:translateY(14px)}
+.slide.on .anim{
+  animation:rise .58s cubic-bezier(.2,.7,.3,1) both;
+  animation-delay:calc(var(--d,0) * 62ms);
+}
+@keyframes rise{to{opacity:1;transform:none}}
+
+/* ============ 文字系统 ============ */
+.eb{position:absolute;font-size:14px;letter-spacing:3.4px;color:var(--cyan2);font-weight:400}
+.ti{position:absolute;font-size:52px;line-height:1.17;font-weight:700;color:var(--ink);letter-spacing:.012em}
+.ti.cover{font-size:54px}
+.tx{position:absolute;font-size:19px;line-height:1.9;color:var(--ink2)}
+.cap{position:absolute;font-size:13.5px;line-height:1.6;color:var(--ink4);letter-spacing:.05em}
+.tick{position:absolute;width:84px;height:3px;background:linear-gradient(90deg,var(--orange) 0%,rgba(255,122,26,0) 100%)}
+.hr{position:absolute;height:1px;background:var(--hair)}
+.vrule{position:absolute;width:1px;background:linear-gradient(180deg,rgba(120,160,200,.30) 0%,rgba(120,160,200,.04) 100%)}
+.num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.eq{font-family:var(--math);font-style:italic;letter-spacing:.01em}
+.eq .fn{font-style:normal}
+.sub{font-size:.62em;vertical-align:-.22em;font-style:normal;letter-spacing:0}
+
+/* 页脚 */
+.footLine{position:absolute;left:75px;width:1130px;height:1px;background:var(--hair)}
+.footTxt{position:absolute;font-size:13px;letter-spacing:.08em;color:rgba(140,165,190,.62)}
+.pnum{position:absolute;font-size:13px;letter-spacing:.14em;color:rgba(140,165,190,.72);font-family:var(--mono);font-variant-numeric:tabular-nums;text-align:right}
+
+/* ============ P1 封面 ============ */
+.legend{position:absolute;display:flex;gap:30px;font-size:15.5px;color:var(--ink2);letter-spacing:.04em}
+.legend .it{display:flex;align-items:center;gap:10px}
+.legend .dot{width:9px;height:9px;border-radius:50%;display:block}
+.d-red{background:var(--red);box-shadow:0 0 12px rgba(255,80,105,.85)}
+.d-cyan{background:var(--cyan);box-shadow:0 0 12px rgba(57,198,255,.85)}
+.d-green{background:var(--green);box-shadow:0 0 12px rgba(78,224,141,.85)}
+.paper{
+  position:absolute;
+  background:#fbfcfe;
+  padding:20px 22px;
+  border-radius:3px;
+  box-shadow:0 30px 70px -28px rgba(0,0,0,.95),0 0 0 1px rgba(255,255,255,.13),0 0 60px -18px rgba(57,198,255,.28);
+}
+.paper img{display:block;width:100%;height:auto;mix-blend-mode:multiply}
+/* 3D 截图：深色画框，与场景背景同色，不做白边 */
+.shot{
+  position:absolute;
+  background:#0a121b;
+  border:1px solid rgba(120,160,200,.24);
+  box-shadow:0 26px 64px -26px rgba(0,0,0,.95),0 0 44px -22px rgba(57,198,255,.3),inset 0 0 0 1px rgba(255,255,255,.03);
+}
+.shot img{display:block;width:100%;height:auto}
+
+/* ============ P2 提问 ============ */
+.q{position:absolute;font-size:30px;line-height:1.55;color:var(--ink);font-weight:400;letter-spacing:.01em}
+.qa{position:absolute;display:grid;grid-template-columns:46px 1fr;gap:18px;align-items:baseline}
+.qa .rk{font-family:var(--math);font-style:italic;font-weight:700;font-size:30px;line-height:1;text-align:center}
+.qa .rt{font-size:19px;line-height:1.72;color:var(--ink2)}
+.qa .rt em{font-family:var(--math);font-style:normal;color:#fff;border-bottom:1px solid rgba(255,122,26,.4);padding-bottom:1px;white-space:nowrap}
+
+/* ============ 3D 场景容器 ============ */
+.scene{position:absolute;background:radial-gradient(72% 66% at 52% 40%,#17293c 0%,#0b141e 48%,#04070c 100%);overflow:hidden}
+.scene::after{
+  content:"";position:absolute;inset:0;pointer-events:none;
+  box-shadow:inset 0 0 60px -18px rgba(0,0,0,.9),inset 0 0 0 1px rgba(120,160,200,.14);
+}
+.scene canvas{display:block;width:100%;height:100%;touch-action:none;cursor:grab}
+.scene canvas:active{cursor:grabbing}
+.sceneHint{position:absolute;left:16px;bottom:12px;font-size:12.5px;letter-spacing:.06em;color:rgba(150,175,200,.52);pointer-events:none}
+.sceneTag{position:absolute;right:16px;top:12px;font-size:12px;letter-spacing:.16em;color:rgba(150,175,200,.55);pointer-events:none}
+
+/* ============ P3 观察栏 ============ */
+.col{position:absolute;display:flex;flex-direction:column}
+.col>*{flex:0 0 auto}
+.obsHead{font-size:14px;letter-spacing:2.6px;color:var(--cyan2);margin-bottom:12px}
+.obsRow{display:grid;grid-template-columns:34px 1fr;gap:14px;align-items:baseline;margin-bottom:13px}
+.obsRow .rk{font-family:var(--math);font-style:italic;font-weight:700;font-size:27px;line-height:1;text-align:center}
+.obsRow p{margin:0;font-size:17px;line-height:1.72;color:var(--ink2)}
+.obsRow p b{color:#fff;font-weight:600}
+
+/* ============ 读数与控件（仪表） ============ */
+.readLab{font-size:12px;letter-spacing:.18em;color:var(--ink4);margin-bottom:8px}
+.stats{display:flex;gap:10px}
+.stat{
+  flex:1 1 auto;min-width:0;
+  display:flex;align-items:baseline;justify-content:center;gap:4px;
+  padding:5px 9px;border-radius:3px;
+  border:1px solid rgba(255,255,255,.075);
+  background:rgba(255,255,255,.028);
+}
+.stat .k{font-family:var(--math);font-style:italic;font-weight:700;font-size:15px;line-height:1}
+.stat .v{font-family:var(--mono);font-size:14px;color:#e8f1fa;font-variant-numeric:tabular-nums}
+.stat .u{font-size:10px;color:var(--ink4);margin-left:1px}
+.stat.kG .k{color:var(--red)}
+.stat.kN .k{color:var(--cyan)}
+.stat.kf .k{color:var(--green)}
+.pill{
+  display:inline-flex;align-items:center;gap:7px;
+  font-size:12.5px;letter-spacing:.03em;padding:5px 11px;border-radius:999px;
+  border:1px solid rgba(57,198,255,.38);color:#9fe1ff;background:rgba(57,198,255,.09);
+  white-space:nowrap;flex:0 0 auto;
+}
+.pill::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor;box-shadow:0 0 8px currentColor}
+.pill.slip{border-color:rgba(255,122,26,.45);color:#ffb571;background:rgba(255,122,26,.1)}
+
+.ctlRow{display:flex;align-items:center;gap:10px}
+.ctlLab{font-size:12.5px;letter-spacing:.14em;color:var(--ink3);flex:0 0 auto}
+.sliderBox{position:relative;flex:1 1 auto;min-width:0;display:flex;align-items:center}
+.critMark{position:absolute;top:-1px;width:1px;height:9px;background:rgba(57,198,255,.6);pointer-events:none}
+.critMark::after{content:"";position:absolute;left:-2px;top:-4px;width:5px;height:5px;border-radius:50%;background:rgba(57,198,255,.8)}
+input[type=range]{
+  -webkit-appearance:none;appearance:none;width:100%;height:20px;margin:0;
+  background:transparent;cursor:pointer;display:block;
+}
+input[type=range]::-webkit-slider-runnable-track{
+  height:4px;border-radius:2px;
+  background:linear-gradient(90deg,var(--orange) 0 var(--pct,40%),rgba(255,255,255,.1) var(--pct,40%) 100%);
+}
+input[type=range]::-webkit-slider-thumb{
+  -webkit-appearance:none;width:15px;height:15px;margin-top:-5.5px;border-radius:50%;
+  background:#fff;border:0;box-shadow:0 0 0 3px rgba(255,122,26,.3),0 2px 8px rgba(0,0,0,.6);
+}
+input[type=range]:focus-visible{outline:none}
+input[type=range]:focus-visible::-webkit-slider-thumb{box-shadow:0 0 0 4px rgba(255,122,26,.6),0 2px 8px rgba(0,0,0,.6)}
+input[type=range]::-moz-range-track{height:4px;border-radius:2px;background:rgba(255,255,255,.1)}
+input[type=range]::-moz-range-progress{height:4px;border-radius:2px;background:var(--orange)}
+input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;background:#fff;border:0;box-shadow:0 0 0 3px rgba(255,122,26,.3)}
+.vval{flex:0 0 auto;font-family:var(--mono);font-size:21px;color:#fff;font-variant-numeric:tabular-nums;text-align:right;letter-spacing:.01em}
+.vval small{font-size:12px;color:var(--ink3);margin-left:1px}
+.btn{
+  appearance:none;background:rgba(16,28,42,.7);border:1px solid rgba(120,160,200,.22);
+  color:#a9c2dc;font-size:12.5px;letter-spacing:.06em;padding:6px 12px;border-radius:5px;
+  cursor:pointer;transition:border-color .16s,color .16s,background .16s;white-space:nowrap;
+}
+.btn:hover{border-color:rgba(255,122,26,.55);color:#ffd0a8;background:rgba(26,38,54,.85)}
+.btn:active{transform:translateY(1px)}
+.btn.on{border-color:rgba(255,122,26,.8);color:#ffd7b0;background:rgba(255,122,26,.16)}
+.chk{
+  display:inline-flex;align-items:center;gap:6px;padding:5px 10px 5px 8px;border-radius:5px;
+  border:1px solid rgba(255,255,255,.09);background:rgba(255,255,255,.02);
+  cursor:pointer;font-size:12px;color:#71879d;transition:border-color .16s,color .16s,background .16s;
+  user-select:none;
+}
+.chk input{width:14px;height:14px;margin:0;accent-color:var(--c,#888);cursor:pointer}
+.chk .fk{font-family:var(--math);font-style:italic;font-weight:700;font-size:14px;line-height:1;color:var(--c,#888);opacity:.5;transition:opacity .16s}
+.chk[data-k="G"]{--c:#ff5069}
+.chk[data-k="N"]{--c:#39c6ff}
+.chk[data-k="f"]{--c:#4ee08d}
+.chk.on{color:#e6eef8;background:rgba(255,255,255,.055)}
+.chk.on .fk{opacity:1}
+.chk.on[data-k="G"]{border-color:rgba(255,80,105,.55)}
+.chk.on[data-k="N"]{border-color:rgba(57,198,255,.55)}
+.chk.on[data-k="f"]{border-color:rgba(78,224,141,.55)}
+.chk:hover{border-color:rgba(255,255,255,.2)}
+
+.errBox{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:28px;text-align:center;font-size:14px;line-height:1.8;color:#c9d6e4}
+
+/* ============ P4 步骤 ============ */
+.lead{position:absolute;font-size:17.5px;line-height:1.78;color:var(--ink2)}
+.steps{position:absolute;display:flex;flex-direction:column;gap:14px}
+.step{display:grid;grid-template-columns:34px 1fr;gap:12px;align-items:baseline}
+.step .no{font-family:var(--mono);font-size:12.5px;color:rgba(57,198,255,.8);letter-spacing:.1em;padding-top:3px}
+.step p{margin:0;font-size:16px;line-height:1.68;color:var(--ink2)}
+.step p b{color:#fff;font-weight:600}
+.entry{
+  position:absolute;padding:12px 16px;
+  border-left:2px solid rgba(255,122,26,.75);
+  background:linear-gradient(90deg,rgba(255,122,26,.09) 0%,rgba(255,122,26,0) 92%);
+  font-size:15px;line-height:1.7;color:var(--ink2);
+}
+.entry b{color:var(--orange2);font-weight:600}
+
+/* ============ P5 规律 ============ */
+.law{position:absolute}
+.law .hd{display:flex;align-items:baseline;gap:14px;margin-bottom:6px}
+.law .sym{font-family:var(--math);font-style:italic;font-weight:700;font-size:30px;line-height:1}
+.law .nm{font-size:16px;letter-spacing:.1em;color:rgba(206,222,238,.7)}
+.law .fm{font-family:var(--math);font-size:20px;color:#fff;letter-spacing:.01em}
+.law .fm .fn{font-style:normal}
+.law p{margin:0;font-size:15.5px;line-height:1.72;color:var(--ink3)}
+.note{
+  position:absolute;padding:11px 16px;
+  border-left:2px solid rgba(255,122,26,.85);
+  background:linear-gradient(90deg,rgba(255,122,26,.10) 0%,rgba(255,122,26,0) 95%);
+  font-size:15.5px;line-height:1.72;color:rgba(255,214,182,.96);
+}
+.note b{color:#ffb071;font-weight:600}
+
+/* ============ P6 ============ */
+.side{position:absolute}
+.side .h{font-size:13px;letter-spacing:.16em;color:var(--ink4);margin-bottom:6px}
+.side .b{font-family:var(--math);font-size:22px;color:#fff;margin-bottom:4px}
+.side .b .fn{font-style:normal}
+.side p{margin:0;font-size:15px;line-height:1.66;color:var(--ink3)}
+.concl{position:absolute;font-size:20px;line-height:1.6;color:var(--orange2);font-weight:600}
+.meth{position:absolute;font-size:15px;line-height:1.78;color:var(--ink3)}
+.meth b{color:var(--ink);font-weight:600}
+
+/* ============ 演示控制条（贴在右侧留白里） ============ */
+#chrome{
+  position:absolute;right:11px;top:50%;transform:translateY(-50%);
+  display:flex;flex-direction:column;align-items:center;gap:3px;
+  padding:6px 4px;border-radius:9px;
+  background:rgba(8,14,22,.30);
+  border:1px solid rgba(120,160,200,.09);
+  opacity:.42;
+  transition:opacity .3s ease,background .3s,border-color .3s;
+  z-index:40;
+}
+#chrome.show,#chrome:hover{opacity:1;background:rgba(8,14,22,.76);border-color:rgba(120,160,200,.22)}
+#chrome .gbtn{
+  appearance:none;border:1px solid transparent;background:rgba(255,255,255,.05);
+  width:30px;height:30px;border-radius:6px;display:grid;place-items:center;
+  color:#a9c2dc;cursor:pointer;transition:background .15s,color .15s,border-color .15s;
+}
+#chrome .gbtn:hover{background:rgba(255,122,26,.16);color:#ffd0a8;border-color:rgba(255,122,26,.45)}
+#chrome .gbtn:disabled{opacity:.26;cursor:default}
+#chrome .gbtn:disabled:hover{background:rgba(255,255,255,.05);color:#a9c2dc;border-color:transparent}
+#chrome .dots{display:flex;flex-direction:column;align-items:center;gap:0;padding:3px 0}
+#chrome .dot{
+  appearance:none;border:0;background:transparent;width:22px;height:13px;display:grid;place-items:center;cursor:pointer;
+}
+#chrome .dot i{display:block;width:5px;height:5px;border-radius:2px;background:rgba(160,190,220,.4);transition:background .18s,transform .18s}
+#chrome .dot:hover i{background:rgba(255,122,26,.85)}
+#chrome .dot.on i{background:var(--orange);transform:scale(1.5)}
+#progress{
+  position:absolute;left:0;right:0;bottom:0;height:2px;background:rgba(120,160,200,.10);z-index:45;
+}
+#progressFill{height:100%;width:0;background:linear-gradient(90deg,rgba(255,122,26,.5) 0%,var(--orange) 100%);transition:width .45s cubic-bezier(.4,0,.2,1)}
+#rotateTip{
+  display:none;position:fixed;left:50%;top:14px;transform:translateX(-50%);
+  z-index:70;padding:8px 14px;border-radius:8px;font-size:13px;letter-spacing:.06em;
+  color:#ffd0a8;background:rgba(255,122,26,.14);border:1px solid rgba(255,122,26,.35);
+}
+@media (max-width:860px),(max-aspect-ratio:5/4){
+  #rotateTip{display:block}
+}
+
+@media (prefers-reduced-motion:reduce){
+  .bgGrid{animation:none}
+  .slide .anim{opacity:1;transform:none;animation:none!important}
+  .slide{transition:opacity .2s linear;transform:none}
+}
+/* 静态预览 / 屏幕录制：URL 加 ?still=1 关闭全部过渡动画 */
+body.no-fx .slide{transition:none;transform:none}
+body.no-fx .slide .anim{animation:none!important;opacity:1;transform:none}
+body.no-fx .bgGrid{animation:none}
+</style>
+</head>
+<body>
+<div id="deck">
+  <div id="stage">
+    <div class="bgGlow"></div>
+    <div class="bgGrid"></div>
+    <div class="bgVig"></div>
+
+    <!-- ================= 第 1 页 · 课题导入 ================= -->
+    <section class="slide" data-page="1" aria-label="第 1 页 课题导入">
+      <div class="eb anim" style="left:75px;top:118px;--d:0">高中物理 · 相互作用与牛顿运动定律</div>
+      <div class="ti cover anim" style="left:75px;top:154px;width:520px;--d:1">斜面上的物体<br>受力分析</div>
+      <div class="tick anim" style="left:75px;top:352px;--d:2"></div>
+      <div class="tx anim" style="left:75px;top:378px;width:468px;--d:3">
+        教材把斜面、滑块和它受到的三根力，压在一张二维示意图里。这节课先读懂这张图，再把它立起来、动起来，最后回到公式。
+      </div>
+      <div class="legend anim" style="left:75px;top:540px;--d:4">
+        <span class="it"><i class="dot d-red"></i>G&nbsp; 重力</span>
+        <span class="it"><i class="dot d-cyan"></i>N&nbsp; 支持力</span>
+        <span class="it"><i class="dot d-green"></i>f&nbsp; 摩擦力</span>
+      </div>
+      <div class="vrule" style="left:608px;top:120px;height:452px"></div>
+      <div class="paper anim" style="left:661px;top:120px;width:544px;--d:2">
+        <img src="assets/textbook.png" alt="高中物理教材中的斜面受力分析示意图">
+      </div>
+      <div class="cap anim" style="left:661px;top:580px;width:544px;--d:3">教材原图 · 斜面、滑块与三根受力箭头</div>
+      <div class="cap anim" style="left:75px;top:606px;width:470px;font-size:12.5px;color:rgba(140,165,190,.6);--d:5">← → 翻页 · F 全屏　|　第 3 页起可以亲手拖动模型、调整坡度</div>
+      <div class="footLine" style="top:661px"></div>
+      <div class="footTxt" style="left:75px;top:672px">斜面上的物体受力分析 · 高中物理课堂</div>
+      <div class="pnum" style="left:1019px;top:672px;width:186px">01 / 06</div>
+    </section>
+
+    <!-- ================= 第 2 页 · 课堂提问 ================= -->
+    <section class="slide" data-page="2" aria-label="第 2 页 课堂提问">
+      <div class="eb anim" style="left:75px;top:68px;--d:0">课堂提问 · 先猜后验</div>
+      <div class="ti anim" style="left:75px;top:100px;width:1100px;--d:1">斜面变陡，受力会怎样变化？</div>
+      <div class="q anim" style="left:75px;top:196px;width:720px;--d:2">倾角从 10° 推到 60°，三个力会怎样变化？</div>
+
+      <div class="qa anim" style="left:75px;top:280px;width:600px;--d:3">
+        <span class="rk" style="color:var(--red)">G</span>
+        <span class="rt">重力的大小和方向，会跟着坡度改变吗？</span>
+      </div>
+      <div class="qa anim" style="left:75px;top:368px;width:600px;--d:4">
+        <span class="rk" style="color:var(--cyan)">N</span>
+        <span class="rt">支持力还等于 <em>N = mg cos θ</em> 吗？坡越陡，它越大还是越小？</span>
+      </div>
+      <div class="qa anim" style="left:75px;top:458px;width:600px;--d:5">
+        <span class="rk" style="color:var(--green)">f</span>
+        <span class="rt">摩擦力会跟着坡度一直变大吗？它总等于 <em>f = mg sin θ</em> 吗？</span>
+      </div>
+
+      <div class="tx anim" style="left:75px;top:552px;width:600px;font-size:15.5px;color:var(--ink3);--d:6">
+        先各自写下猜测并说清理由，下一页用 3D 模型逐条验证。
+      </div>
+
+      <div class="vrule" style="left:700px;top:150px;height:415px"></div>
+      <div class="paper anim" style="left:736px;top:150px;width:470px;--d:2">
+        <img src="assets/textbook.png" alt="教材原图：斜面上的滑块与三个力">
+      </div>
+      <div class="cap anim" style="left:736px;top:532px;width:470px;--d:3">教材原图 · θ 变大时，三根箭头哪一根最先撑不住？</div>
+
+      <div class="footLine" style="top:661px"></div>
+      <div class="footTxt" style="left:75px;top:672px">斜面上的物体受力分析 · 高中物理课堂</div>
+      <div class="pnum" style="left:1019px;top:672px;width:186px">02 / 06</div>
+    </section>
+
+    <!-- ================= 第 3 页 · 3D 模型观察 ================= -->
+    <section class="slide" data-page="3" aria-label="第 3 页 3D 模型观察">
+      <div class="eb anim" style="left:75px;top:68px;--d:0">3D 模型观察 · 把二维变成三维</div>
+      <div class="ti anim" style="left:75px;top:100px;width:900px;--d:1">让平面受力图立起来</div>
+
+      <div class="scene anim" id="scene3" style="left:75px;top:186px;width:725px;height:420px;--d:2">
+        <div class="sceneTag">REAL-TIME 3D</div>
+        <div class="sceneHint" data-ref="hint">拖动旋转 · 滚轮缩放</div>
+      </div>
+
+      <div class="col" style="left:840px;top:186px;width:365px;height:450px">
+        <div class="obsHead anim" style="--d:3">观察三根箭头的方向</div>
+        <div class="obsRow anim" style="--d:4">
+          <span class="rk" style="color:var(--red)">G</span>
+          <p><b>永远竖直向下。</b>不管斜面怎么倾斜，它都指向地面，和坡度无关。</p>
+        </div>
+        <div class="obsRow anim" style="--d:5">
+          <span class="rk" style="color:var(--cyan)">N</span>
+          <p><b>垂直斜面向上。</b>从斜面里“顶”住滑块，不和斜面平行。</p>
+        </div>
+        <div class="obsRow anim" style="--d:6">
+          <span class="rk" style="color:var(--green)">f</span>
+          <p><b>贴着斜面。</b>与斜面平行，朝上还是朝下，由相对运动趋势决定。</p>
+        </div>
+
+        <div class="hr" style="position:relative;margin:0 0 11px"></div>
+        <div class="readLab">实时读数</div>
+        <div class="stats" style="margin-bottom:8px">
+          <div class="stat kN"><span class="k">N</span><span class="v" data-ref="vN">9.21</span><span class="u">N</span></div>
+          <div class="stat kf"><span class="k">f</span><span class="v" data-ref="vf">3.35</span><span class="u">N</span></div>
+          <div class="stat kG"><span class="k">G</span><span class="v" data-ref="vG">9.80</span><span class="u">N</span></div>
+        </div>
+        <div style="margin-bottom:12px"><span class="pill" data-ref="pill">静止 · 静摩擦</span></div>
+
+        <div class="ctlRow" style="margin-bottom:9px">
+          <span class="ctlLab">坡度</span>
+          <div class="sliderBox">
+            <span class="critMark" data-ref="crit"></span>
+            <input type="range" min="10" max="60" step="0.5" value="20" data-ref="slider" aria-label="斜面倾角">
+          </div>
+          <span class="vval"><span data-ref="ang">20.0</span><small>°</small></span>
+        </div>
+        <div class="ctlRow" style="gap:6px">
+          <button class="btn" type="button" data-ref="side">侧视角</button>
+          <label class="chk on" data-k="G"><input type="checkbox" checked data-ref="chkG"><span class="fk">G</span></label>
+          <label class="chk on" data-k="N"><input type="checkbox" checked data-ref="chkN"><span class="fk">N</span></label>
+          <label class="chk on" data-k="f"><input type="checkbox" checked data-ref="chkf"><span class="fk">f</span></label>
+        </div>
+      </div>
+
+      <div class="footLine" style="top:661px"></div>
+      <div class="footTxt" style="left:75px;top:672px">斜面上的物体受力分析 · 高中物理课堂</div>
+      <div class="pnum" style="left:1019px;top:672px;width:186px">03 / 06</div>
+    </section>
+
+    <!-- ================= 第 4 页 · 3D 互动实验 ================= -->
+    <section class="slide" data-page="4" aria-label="第 4 页 3D 互动实验">
+      <div class="eb anim" style="left:75px;top:68px;--d:0">3D 互动实验 · 亲手改变条件</div>
+      <div class="ti anim" style="left:75px;top:100px;width:1100px;--d:1">动手调整坡度，验证猜想</div>
+
+      <div class="lead anim" style="left:75px;top:186px;width:378px;--d:2">
+        模型可以交到学生手上：一边推坡度，一边盯着箭头看，猜想自己会给出答案。
+      </div>
+
+      <div class="steps anim" style="left:75px;top:264px;width:385px;--d:3">
+        <div class="step"><span class="no">01</span><p>拖动<b>「坡度」</b>滑块，从 10° 一路加到 60°，途中不要停顿。</p></div>
+        <div class="step"><span class="no">02</span><p>点<b>「侧视角」</b>，把视线摆正，三根箭头之间的夹角才量得准。</p></div>
+        <div class="step"><span class="no">03</span><p>用<b>「显示力」</b>单独开关 G、N、f，逐个确认它们的方向。</p></div>
+        <div class="step"><span class="no">04</span><p>盯住<b>26.6°</b> 这个临界角：过线之后，摩擦力从静摩擦跳到滑动摩擦。</p></div>
+      </div>
+
+      <div class="entry anim" style="left:75px;top:540px;width:378px;--d:4">
+        <b>本页可以直接操作</b>：拖动旋转、滚轮缩放、改坡度、开关力，都在这一页里完成，不需要另外打开任何页面。
+      </div>
+
+      <div class="scene anim" id="scene4" style="left:490px;top:176px;width:716px;height:400px;--d:2">
+        <div class="sceneTag">REAL-TIME 3D</div>
+        <div class="sceneHint" data-ref="hint">拖动旋转 · 滚轮缩放</div>
+      </div>
+
+      <div class="anim" style="position:absolute;left:490px;top:586px;width:716px;--d:3">
+        <div class="ctlRow" style="margin-bottom:9px">
+          <span class="ctlLab">坡度</span>
+          <div class="sliderBox">
+            <span class="critMark" data-ref="crit"></span>
+            <input type="range" min="10" max="60" step="0.5" value="20" data-ref="slider" aria-label="斜面倾角">
+          </div>
+          <span class="vval" style="width:64px"><span data-ref="ang">20.0</span><small>°</small></span>
+          <button class="btn" type="button" data-ref="side">侧视角</button>
+          <button class="btn" type="button" data-ref="reset">重置</button>
+        </div>
+        <div class="ctlRow" style="gap:7px">
+          <span class="ctlLab">显示力</span>
+          <label class="chk on" data-k="G"><input type="checkbox" checked data-ref="chkG"><span class="fk">G</span></label>
+          <label class="chk on" data-k="N"><input type="checkbox" checked data-ref="chkN"><span class="fk">N</span></label>
+          <label class="chk on" data-k="f"><input type="checkbox" checked data-ref="chkf"><span class="fk">f</span></label>
+          <span class="pill" data-ref="pill">静止 · 静摩擦</span>
+          <div class="stat kN" style="flex:0 0 auto"><span class="k">N</span><span class="v" data-ref="vN">9.21</span><span class="u">N</span></div>
+          <div class="stat kf" style="flex:0 0 auto"><span class="k">f</span><span class="v" data-ref="vf">3.35</span><span class="u">N</span></div>
+          <div class="stat kG" style="flex:0 0 auto"><span class="k">G</span><span class="v" data-ref="vG">9.80</span><span class="u">N</span></div>
+        </div>
+      </div>
+
+      <div class="footLine" style="top:661px"></div>
+      <div class="footTxt" style="left:75px;top:672px">斜面上的物体受力分析 · 高中物理课堂</div>
+      <div class="pnum" style="left:1019px;top:672px;width:186px">04 / 06</div>
+    </section>
+
+    <!-- ================= 第 5 页 · 物理规律总结 ================= -->
+    <section class="slide" data-page="5" aria-label="第 5 页 物理规律总结">
+      <div class="eb anim" style="left:75px;top:68px;--d:0">规律总结 · 用公式说话</div>
+      <div class="ti anim" style="left:75px;top:100px;width:900px;--d:1">斜面上的受力规律</div>
+
+      <div class="law anim" style="left:75px;top:188px;width:585px;--d:2">
+        <div class="hd">
+          <span class="sym" style="color:var(--red)">G</span>
+          <span class="nm">重力</span>
+          <span class="fm">G = mg</span>
+        </div>
+        <p>方向永远竖直向下。只要 m 和 g 不变，它的大小和方向都不随坡度改变。<br>坡度改变的是它沿斜面、垂直斜面的两个分力。</p>
+      </div>
+
+      <div class="law anim" style="left:75px;top:296px;width:585px;--d:3">
+        <div class="hd">
+          <span class="sym" style="color:var(--cyan)">N</span>
+          <span class="nm">支持力</span>
+          <span class="fm">N = mg <span class="fn">cos</span> θ</span>
+        </div>
+        <p>垂直于斜面向外。没有其他垂直方向的外力时，θ 越大 <span class="fn">cos</span> θ 越小，N 也越小。</p>
+      </div>
+
+      <div class="law anim" style="left:75px;top:396px;width:585px;--d:4">
+        <div class="hd">
+          <span class="sym" style="color:var(--green)">f</span>
+          <span class="nm">摩擦力</span>
+          <span class="fm">静止 f = mg <span class="fn">sin</span> θ　·　滑动 f = μ<span class="sub">k</span>N</span>
+        </div>
+        <p>方向沿接触面。它的大小和方向由物体的运动状态或运动趋势决定，不是一个固定值。</p>
+      </div>
+
+      <div class="hr" style="left:75px;top:474px;width:585px"></div>
+
+      <div class="note anim" style="left:75px;top:490px;width:585px;--d:5">
+        <b>别把摩擦力当成“一定随坡度增大”</b>：静止时 f 与 mg sin θ 等大反向，确实跟着变大；越过临界角之后转成滑动摩擦，按 f = μk N 计算，反而变小。
+      </div>
+
+      <div class="cap anim" style="left:75px;top:580px;width:585px;--d:6">
+        模型实测：20° 时 f = 3.35 N（静止 · 静摩擦）；55° 时 f = 1.97 N（滑动 · f = μk N）
+      </div>
+
+      <div class="shot anim" style="left:686px;top:186px;width:520px;--d:2">
+        <img src="assets/p5_side.png" alt="20° 侧视角下的斜面受力模型">
+      </div>
+      <div class="cap anim" style="left:686px;top:600px;width:520px;--d:3">20° 侧视 · 三根箭头同一平面内可见</div>
+
+      <div class="footLine" style="top:661px"></div>
+      <div class="footTxt" style="left:75px;top:672px">斜面上的物体受力分析 · 高中物理课堂</div>
+      <div class="pnum" style="left:1019px;top:672px;width:186px">05 / 06</div>
+    </section>
+
+    <!-- ================= 第 6 页 · 课堂思考与总结 ================= -->
+    <section class="slide" data-page="6" aria-label="第 6 页 课堂思考与总结">
+      <div class="eb anim" style="left:75px;top:68px;--d:0">课堂思考 · 把方法带走</div>
+      <div class="ti anim" style="left:75px;top:100px;width:640px;--d:1">为什么斜面越陡，<br>物体越容易下滑？</div>
+
+      <div class="side anim" style="left:75px;top:252px;width:585px;--d:2">
+        <div class="h">沿斜面方向</div>
+        <div class="b"><span class="fn">mg sin</span> θ 越来越大</div>
+        <p>它沿斜面向下，就是推着物体往下滑的那股力。</p>
+      </div>
+
+      <div class="side anim" style="left:75px;top:368px;width:585px;--d:3">
+        <div class="h">垂直斜面方向</div>
+        <div class="b"><span class="fn">mg cos</span> θ 越来越小</div>
+        <p>支持力随之变小，摩擦力能提供的上限也跟着变小。</p>
+      </div>
+
+      <div class="hr" style="left:75px;top:470px;width:585px"></div>
+
+      <div class="concl anim" style="left:75px;top:484px;width:585px;--d:4">
+        推动下滑的力变大，能拦住的力变小。
+      </div>
+
+      <div class="meth anim" style="left:75px;top:532px;width:585px;--d:5">
+        会不会滑：<b>tan θ &gt; μs</b> 才开始滑动，临界角 26.6°（μs = 0.50）
+      </div>
+      <div class="meth anim" style="left:75px;top:562px;width:585px;--d:6">
+        受力分析三步：<b>定研究对象 → 先画重力 → 沿斜面、垂直斜面分解</b>
+      </div>
+
+      <div class="shot anim" style="left:776px;top:186px;width:430px;--d:2">
+        <img src="assets/p6_side55.png" alt="55° 侧视角下的斜面受力模型">
+      </div>
+      <div class="cap anim" style="left:776px;top:580px;width:430px;--d:3">55° 侧视 · 已经滑动，f 转为滑动摩擦</div>
+
+      <div class="footLine" style="top:661px"></div>
+      <div class="footTxt" style="left:75px;top:672px">斜面上的物体受力分析 · 高中物理课堂</div>
+      <div class="pnum" style="left:1019px;top:672px;width:186px">06 / 06</div>
+    </section>
+
+    <!-- 演示控制 -->
+    <div id="chrome">
+      <button class="gbtn" id="prev" type="button" title="上一页（←）" aria-label="上一页">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M14 6 L8 12 L14 18"/></svg>
+      </button>
+      <div class="dots" id="dots"></div>
+      <button class="gbtn" id="next" type="button" title="下一页（→）" aria-label="下一页">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M10 6 L16 12 L10 18"/></svg>
+      </button>
+      <button class="gbtn" id="fs" type="button" title="全屏（F）" aria-label="全屏">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 9 V4 H9 M15 4 H20 V9 M20 15 V20 H15 M9 20 H4 V15"/></svg>
+      </button>
+    </div>
+    <div id="progress"><div id="progressFill"></div></div>
+  </div>
+</div>
+<div id="rotateTip">建议横屏或使用电脑观看（本演示为 16:9 投影版式）</div>
+
+<script src="https://fastly.jsdelivr.net/npm/three@0.160.1/build/three.min.js"></script>
+<script>
+if (!window.THREE) {
+  document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/0.160.1/three.min.js"><\/script>');
+}
+</script>
+<script>
+/* ============================================================
+   演示控制器：缩放 / 翻页 / 键盘 / 全屏 / 进度
+   ============================================================ */
+(function () {
+  'use strict';
+
+  var stageEl = document.getElementById('stage');
+  var slides = [].slice.call(document.querySelectorAll('.slide'));
+  var total = slides.length;
+  var cur = 0;
+
+  var chrome = document.getElementById('chrome');
+  var prevBtn = document.getElementById('prev');
+  var nextBtn = document.getElementById('next');
+  var fsBtn = document.getElementById('fs');
+  var dotsBox = document.getElementById('dots');
+  var fill = document.getElementById('progressFill');
+
+  /* 页码指示点 */
+  slides.forEach(function (s, i) {
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'dot';
+    b.setAttribute('aria-label', '跳到第 ' + (i + 1) + ' 页');
+    b.innerHTML = '<i></i>';
+    b.addEventListener('click', function () { go(i + 1); });
+    dotsBox.appendChild(b);
+  });
+  var dots = [].slice.call(dotsBox.children);
+
+  /* 等比缩放到视口 */
+  function fit() {
+    var s = Math.min(window.innerWidth / 1280, window.innerHeight / 720);
+    s = Math.max(0.2, s);
+    stageEl.style.transform = 'scale(' + s + ')';
+    window.__deckScale = s;
+    if (window.DeckScenes) window.DeckScenes.onScale(s);
+  }
+
+  /* 翻页 */
+  function go(n) {
+    n = Math.max(1, Math.min(total, n));
+    if (n === cur) return;
+    cur = n;
+    slides.forEach(function (s, i) {
+      var on = (i + 1 === n);
+      s.classList.toggle('on', on);
+      s.setAttribute('aria-hidden', on ? 'false' : 'true');
+    });
+    dots.forEach(function (d, i) { d.classList.toggle('on', i + 1 === n); });
+    prevBtn.disabled = (n === 1);
+    nextBtn.disabled = (n === total);
+    fill.style.width = (n / total * 100) + '%';
+    if (window.DeckScenes) window.DeckScenes.setActive(n);
+    try { history.replaceState(null, '', '#' + n); } catch (e) {}
+    flashChrome();
+  }
+
+  /* 控制条自动隐藏 */
+  var hideTimer = null;
+  function flashChrome() {
+    chrome.classList.add('show');
+    clearTimeout(hideTimer);
+    hideTimer = setTimeout(function () {
+      if (!chrome.matches(':hover')) chrome.classList.remove('show');
+    }, 2400);
+  }
+  document.addEventListener('mousemove', flashChrome);
+  document.addEventListener('touchstart', flashChrome, { passive: true });
+
+  prevBtn.addEventListener('click', function () { go(cur - 1); });
+  nextBtn.addEventListener('click', function () { go(cur + 1); });
+
+  /* 全屏 */
+  function toggleFs() {
+    var d = document;
+    if (!d.fullscreenElement && !d.webkitFullscreenElement) {
+      var el = d.documentElement;
+      var req = el.requestFullscreen || el.webkitRequestFullscreen;
+      if (req) {
+        var p = req.call(el);
+        if (p && p.catch) p.catch(function () {});
+      }
+    } else {
+      var exit = d.exitFullscreen || d.webkitExitFullscreen;
+      if (exit) exit.call(d);
+    }
+  }
+  fsBtn.addEventListener('click', toggleFs);
+
+  /* 键盘 */
+  document.addEventListener('keydown', function (e) {
+    var t = e.target;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'BUTTON' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+    var k = e.key;
+    if (k === 'ArrowRight' || k === 'PageDown' || k === 'ArrowDown' || k === ' ') {
+      e.preventDefault(); go(cur + 1);
+    } else if (k === 'ArrowLeft' || k === 'PageUp' || k === 'ArrowUp') {
+      e.preventDefault(); go(cur - 1);
+    } else if (k === 'Home') {
+      e.preventDefault(); go(1);
+    } else if (k === 'End') {
+      e.preventDefault(); go(total);
+    } else if (k === 'f' || k === 'F') {
+      e.preventDefault(); toggleFs();
+    }
+  });
+
+  /* 尺寸变化 */
+  var rafFit = 0;
+  function scheduleFit() {
+    if (rafFit) return;
+    rafFit = requestAnimationFrame(function () { rafFit = 0; fit(); });
+  }
+  window.addEventListener('resize', scheduleFit);
+  window.addEventListener('orientationchange', scheduleFit);
+  document.addEventListener('fullscreenchange', scheduleFit);
+  document.addEventListener('webkitfullscreenchange', scheduleFit);
+
+  /* 起始页：支持 #3 或 ?p=3 */
+  function startPage() {
+    var q = (location.search.match(/[?&]p=(\d+)/) || [])[1];
+    var h = (location.hash || '').replace(/[^0-9]/g, '');
+    var n = parseInt(q || h, 10);
+    return (n >= 1 && n <= total) ? n : 1;
+  }
+
+  if (/[?&]still=1/.test(location.search)) document.body.classList.add('no-fx');
+
+  fit();
+  go(startPage());
+  window.__deckGo = go;
+})();
+</script>
+<script>
+/* ============================================================
+   3D 斜面受力模型（复用前序模型几何、材质、物理与交互逻辑）
+   ============================================================ */
+(function () {
+  'use strict';
+
+  var T = window.THREE;
+  var sceneEls = [].slice.call(document.querySelectorAll('.scene'));
+
+  if (!T) {
+    sceneEls.forEach(function (el) {
+      var d = document.createElement('div');
+      d.className = 'errBox';
+      d.textContent = '3D 引擎未能加载：请联网后刷新页面。课堂离线时可把 three.min.js 放到 assets 目录后再打开。';
+      el.appendChild(d);
+    });
+    return;
+  }
+
+  /* ---------- 常量（与已交付模型一致） ---------- */
+  var SL = 5.6;              // 斜面长度
+  var DEPTH = 2.4;           // 斜面厚度
+  var BW = 1.6;              // 滑块沿斜面方向长度
+  var BH = 0.80;             // 滑块高度
+  var BD = 1.66;             // 滑块宽度
+  var MASS = 1.0;            // kg
+  var GACC = 9.8;            // m/s²
+  var MUS = 0.50;            // 静摩擦因数
+  var MUK = 0.35;            // 滑动摩擦因数
+  var KL = 0.165;            // 力长度标度：米 / 牛顿
+  var SLOW = 0.42;           // 下滑慢放系数
+
+  var S_MIN = BW / 2 + 0.12;
+  var S_MAX = SL - BW / 2 - 0.62;
+  var CRIT_DEG = Math.atan(MUS) * 180 / Math.PI;
+  var SIDE_PHI = Math.PI / 2 - 0.035;
+
+  var UP = new T.Vector3(0, 1, 0);
+  var instances = [];
+
+  function physics(th) {
+    var N = MASS * GACC * Math.cos(th);
+    var G = MASS * GACC;
+    var sliding = Math.tan(th) > MUS;
+    var f = sliding ? MUK * N : G * Math.sin(th);
+    return { N: N, G: G, f: f, sliding: sliding };
+  }
+
+  function createIncline(sceneEl, scope, opts) {
+    opts = opts || {};
+
+    var ref = function (name) { return scope.querySelector('[data-ref="' + name + '"]'); };
+    var elSlider = ref('slider'), elAng = ref('ang'), elVN = ref('vN'), elVF = ref('vf'),
+        elVG = ref('vG'), elPill = ref('pill'), elSide = ref('side'), elReset = ref('reset'),
+        elHint = ref('hint'), elCrit = ref('crit');
+    var chks = { G: ref('chkG'), N: ref('chkN'), f: ref('chkf') };
+
+    /* ---------- 渲染器 ---------- */
+    var renderer = new T.WebGLRenderer({ antialias: true, alpha: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = T.PCFSoftShadowMap;
+    renderer.toneMapping = T.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.25;
+    sceneEl.appendChild(renderer.domElement);
+
+    var scene = new T.Scene();
+    var camera = new T.PerspectiveCamera(36, 16 / 9, 0.1, 200);
+
+    /* 程序化环境贴图 */
+    (function () {
+      var c = document.createElement('canvas');
+      c.width = 512; c.height = 256;
+      var g = c.getContext('2d');
+      var lg = g.createLinearGradient(0, 0, 0, 256);
+      lg.addColorStop(0, '#8fb4dd');
+      lg.addColorStop(0.42, '#33495e');
+      lg.addColorStop(0.52, '#182430');
+      lg.addColorStop(1, '#06090e');
+      g.fillStyle = lg; g.fillRect(0, 0, 512, 256);
+
+      var r1 = g.createRadialGradient(360, 66, 0, 360, 66, 130);
+      r1.addColorStop(0, 'rgba(255,255,255,0.9)');
+      r1.addColorStop(1, 'rgba(255,255,255,0)');
+      g.fillStyle = r1; g.fillRect(0, 0, 512, 256);
+
+      var r2 = g.createRadialGradient(96, 120, 0, 96, 120, 170);
+      r2.addColorStop(0, 'rgba(255,168,104,0.42)');
+      r2.addColorStop(1, 'rgba(255,168,104,0)');
+      g.fillStyle = r2; g.fillRect(0, 0, 512, 256);
+
+      var tex = new T.CanvasTexture(c);
+      tex.mapping = T.EquirectangularReflectionMapping;
+      if ('colorSpace' in tex) tex.colorSpace = T.SRGBColorSpace;
+      scene.environment = tex;
+    })();
+
+    /* ---------- 光照 ---------- */
+    var hemi = new T.HemisphereLight(0xbcd4f0, 0x16202d, 0.95);
+    scene.add(hemi);
+
+    var key = new T.DirectionalLight(0xffffff, 2.7);
+    key.position.set(8.5, 12, 7.5);
+    key.castShadow = true;
+    key.shadow.mapSize.set(2048, 2048);
+    key.shadow.camera.left = -8;
+    key.shadow.camera.right = 8;
+    key.shadow.camera.top = 8;
+    key.shadow.camera.bottom = -8;
+    key.shadow.camera.near = 1;
+    key.shadow.camera.far = 40;
+    key.shadow.bias = -0.0006;
+    key.shadow.normalBias = 0.02;
+    scene.add(key);
+    scene.add(key.target);
+
+    var rim = new T.DirectionalLight(0x6fa9ff, 1.35);
+    rim.position.set(-7, 6, -6);
+    scene.add(rim);
+
+    var fillLight = new T.DirectionalLight(0xffd9b3, 1.15);
+    fillLight.position.set(-4.5, 2.5, 9);
+    scene.add(fillLight);
+
+    /* ---------- 地面与网格 ---------- */
+    var shadowPlane = new T.Mesh(
+      new T.PlaneGeometry(60, 60),
+      new T.ShadowMaterial({ opacity: 0.5 })
+    );
+    shadowPlane.rotation.x = -Math.PI / 2;
+    shadowPlane.receiveShadow = true;
+    scene.add(shadowPlane);
+
+    var grid = new T.GridHelper(46, 46, 0x2f567c, 0x1c3348);
+    grid.position.y = 0.008;
+    grid.material.transparent = true;
+    grid.material.opacity = 0.55;
+    grid.material.depthWrite = false;
+    scene.add(grid);
+
+    /* ---------- 斜面楔体 ---------- */
+    var shape = new T.Shape();
+    shape.moveTo(0, 0);
+    shape.lineTo(1, 0);
+    shape.lineTo(1, 1);
+    shape.lineTo(0, 0);
+
+    var wedgeGeo = new T.ExtrudeGeometry(shape, { depth: 1, bevelEnabled: false, steps: 1 });
+    wedgeGeo.translate(0, 0, -0.5);
+
+    var wedgeMat = new T.MeshStandardMaterial({ color: 0x50677e, roughness: 0.5, metalness: 0.4, envMapIntensity: 1 });
+    var wedge = new T.Mesh(wedgeGeo, wedgeMat);
+    wedge.castShadow = true;
+    wedge.receiveShadow = true;
+    scene.add(wedge);
+
+    var slopeMat = new T.MeshStandardMaterial({ color: 0x7d9cbd, roughness: 0.55, metalness: 0.26, envMapIntensity: 1.1 });
+    var slopeFace = new T.Mesh(new T.PlaneGeometry(SL, DEPTH), slopeMat);
+    slopeFace.receiveShadow = true;
+    scene.add(slopeFace);
+
+    var qTiltZ = new T.Quaternion();
+    var qFlatX = new T.Quaternion().setFromAxisAngle(new T.Vector3(1, 0, 0), -Math.PI / 2);
+    var AXIS_Z = new T.Vector3(0, 0, 1);
+
+    var wedgeEdge = new T.LineSegments(
+      new T.EdgesGeometry(wedgeGeo),
+      new T.LineBasicMaterial({ color: 0xa9c9e8, transparent: true, opacity: 0.30 })
+    );
+    wedge.add(wedgeEdge);
+
+    var crestMat = new T.MeshStandardMaterial({ color: 0xd6ecff, roughness: 0.3, metalness: 0.6, emissive: 0x1b3348 });
+    var crest = new T.Mesh(new T.BoxGeometry(0.05, 0.05, DEPTH), crestMat);
+    scene.add(crest);
+
+    /* ---------- 滑块 ---------- */
+    var blockMat = new T.MeshStandardMaterial({
+      color: 0xff7a1a, roughness: 0.34, metalness: 0.22,
+      emissive: 0x3d1400, emissiveIntensity: 0.55
+    });
+    var blockGeo = new T.BoxGeometry(BW, BH, BD);
+    var block = new T.Mesh(blockGeo, blockMat);
+    block.castShadow = true;
+    block.receiveShadow = true;
+    scene.add(block);
+
+    var blockEdge = new T.LineSegments(
+      new T.EdgesGeometry(blockGeo),
+      new T.LineBasicMaterial({ color: 0x8a3a00, transparent: true, opacity: 0.55 })
+    );
+    block.add(blockEdge);
+
+    /* ---------- 力箭头 ---------- */
+    var forceLayer = new T.Group();
+    scene.add(forceLayer);
+
+    function makeArrow(colorHex) {
+      var color = new T.Color(colorHex);
+      var mat = new T.MeshStandardMaterial({
+        color: color,
+        emissive: color.clone().multiplyScalar(0.5),
+        emissiveIntensity: 0.9,
+        roughness: 0.28,
+        metalness: 0.15
+      });
+      var shaftGeo = new T.CylinderGeometry(1, 1, 1, 20);
+      shaftGeo.translate(0, 0.5, 0);
+      var headGeo = new T.ConeGeometry(1, 1, 24);
+      headGeo.translate(0, 0.5, 0);
+
+      var g = new T.Group();
+      var shaft = new T.Mesh(shaftGeo, mat);
+      var head = new T.Mesh(headGeo, mat);
+      shaft.castShadow = false;
+      head.castShadow = false;
+      g.add(shaft, head);
+      forceLayer.add(g);
+
+      return {
+        group: g,
+        set: function (origin, dir, length) {
+          var hl = Math.min(0.26, Math.max(0.11, length * 0.34));
+          var sl = Math.max(0.004, length - hl);
+          shaft.scale.set(0.048, sl, 0.048);
+          head.scale.set(0.118, hl, 0.118);
+          head.position.y = length - hl;
+          this.group.quaternion.setFromUnitVectors(UP, dir);
+          this.group.position.copy(origin);
+        }
+      };
+    }
+
+    var arrowG = makeArrow(0xff5069);
+    var arrowN = makeArrow(0x39c6ff);
+    var arrowF = makeArrow(0x4ee08d);
+
+    function makeLabel(text, colorHex, size) {
+      var c = document.createElement('canvas');
+      c.width = 128; c.height = 128;
+      var x = c.getContext('2d');
+      x.fillStyle = colorHex;
+      x.font = 'italic 700 86px Georgia, "Times New Roman", serif';
+      x.textAlign = 'center';
+      x.textBaseline = 'middle';
+      x.shadowColor = 'rgba(0,0,0,0.85)';
+      x.shadowBlur = 16;
+      x.fillText(text, 64, 66);
+      var tex = new T.CanvasTexture(c);
+      if ('colorSpace' in tex) tex.colorSpace = T.SRGBColorSpace;
+      tex.anisotropy = 4;
+      var mat = new T.SpriteMaterial({ map: tex, transparent: true, depthWrite: false, depthTest: false });
+      var s = new T.Sprite(mat);
+      s.scale.set(size, size, 1);
+      s.renderOrder = 10;
+      forceLayer.add(s);
+      return s;
+    }
+
+    var labG = makeLabel('G', '#ff5069', 0.62);
+    var labN = makeLabel('N', '#39c6ff', 0.62);
+    var labF = makeLabel('f', '#4ee08d', 0.52);
+
+    function bindForce(key, arrow, label) {
+      var el = chks[key];
+      if (!el) return;
+      var chip = el.parentNode;
+      function apply() {
+        arrow.group.visible = el.checked;
+        label.visible = el.checked;
+        if (chip && chip.classList) chip.classList.toggle('on', el.checked);
+      }
+      el.addEventListener('change', apply);
+      apply();
+    }
+    bindForce('G', arrowG, labG);
+    bindForce('N', arrowN, labN);
+    bindForce('f', arrowF, labF);
+
+    var fadeVal = 1;
+    function applyFade(o) {
+      fadeVal = o;
+      var tr = o < 0.999;
+      blockMat.transparent = tr;
+      blockMat.opacity = o;
+      blockEdge.material.transparent = true;
+      blockEdge.material.opacity = 0.55 * o;
+      forceLayer.traverse(function (obj) {
+        if (!obj.material) return;
+        if (obj.material.isSpriteMaterial) {
+          obj.material.opacity = o;
+        } else {
+          obj.material.transparent = tr;
+          obj.material.opacity = o;
+        }
+      });
+    }
+
+    /* ---------- 倾角圆弧 ---------- */
+    var arcMesh = new T.Mesh(
+      new T.RingGeometry(0.96, 1, 48),
+      new T.MeshBasicMaterial({ color: 0xa8d6ff, transparent: true, opacity: 1, side: T.DoubleSide })
+    );
+    arcMesh.position.z = DEPTH / 2 + 0.035;
+    scene.add(arcMesh);
+    var lastArcTh = -1;
+    var labTheta = makeLabel('\u03b8', '#cfe6ff', 0.5);
+
+    /* ---------- 状态 ---------- */
+    var angleDeg = (opts.angle != null ? opts.angle : 20);
+    var angleRad = T.MathUtils.degToRad(angleDeg);
+    var slideDist = S_MIN + (S_MAX - S_MIN) * 0.80;
+    var slideVel = 0;
+    var fadeState = 'slide';
+
+    var camGoal = new T.Vector3(2.4, 1.8, 0);
+    var camTarget = new T.Vector3(2.4, 1.8, 0);
+    var fitCenter = new T.Vector3(2.4, 1.2, 0);
+    var fitRadius = 4.2;
+    var lastFitTh = -99;
+
+    var orbit = { theta: 0.72, phi: 0.96, zoom: 1, baseRadius: 12 };
+    var camPos = new T.Vector3();
+    var boxFit = new T.Box3();
+    var pFit = new T.Vector3();
+    var sideLock = false;
+    var camEase = null;
+    var active = false;
+    var curQ = 1;
+
+    /* ---------- 更新几何与力 ---------- */
+    var dirG = new T.Vector3(0, -1, 0);
+    var dirN = new T.Vector3();
+    var dirF = new T.Vector3();
+    var origin = new T.Vector3();
+    var sizeFit = new T.Vector3();
+
+    function updateModel(th) {
+      var base = SL * Math.cos(th);
+      var height = SL * Math.sin(th);
+
+      wedge.scale.set(base, height, DEPTH);
+      crest.position.set(base, height, 0);
+
+      qTiltZ.setFromAxisAngle(AXIS_Z, th);
+      slopeFace.quaternion.copy(qTiltZ).multiply(qFlatX);
+      slopeFace.position
+        .set(base / 2, height / 2, 0)
+        .addScaledVector(new T.Vector3(-Math.sin(th), Math.cos(th), 0), 0.005);
+
+      var nrm = new T.Vector3(-Math.sin(th), Math.cos(th), 0);
+      var upv = new T.Vector3(Math.cos(th), Math.sin(th), 0);
+
+      var P = new T.Vector3(slideDist * Math.cos(th), slideDist * Math.sin(th), 0);
+      block.position.copy(P).addScaledVector(nrm, BH / 2);
+      block.rotation.z = th;
+
+      var st = physics(th);
+      origin.copy(block.position);
+      origin.z = DEPTH / 2 + 0.045;
+
+      dirN.copy(nrm);
+      dirF.copy(upv);
+
+      arrowG.set(origin, dirG, st.G * KL);
+      arrowN.set(origin, dirN, st.N * KL);
+      arrowF.set(origin, dirF, st.f * KL);
+
+      labG.position.copy(origin).addScaledVector(dirG, st.G * KL + 0.36);
+      labN.position.copy(origin).addScaledVector(dirN, st.N * KL + 0.34);
+      labF.position.copy(origin).addScaledVector(dirF, st.f * KL + 0.32);
+
+      var zArc = DEPTH / 2 + 0.035;
+      var rArc = Math.min(1.35, Math.max(0.9, base * 0.36));
+      if (Math.abs(th - lastArcTh) > 0.0008) {
+        arcMesh.geometry.dispose();
+        arcMesh.geometry = new T.RingGeometry(rArc - 0.016, rArc + 0.004, 56, 1, 0, th);
+        arcMesh.position.z = zArc;
+        lastArcTh = th;
+      }
+      labTheta.position.set(Math.cos(th / 2) * (rArc + 0.26), Math.sin(th / 2) * (rArc + 0.26), zArc + 0.02);
+      labTheta.scale.set(0.44, 0.44, 1);
+
+      /* 取景：仅当坡度变化时重算，滑动过程中镜头不抖 */
+      if (Math.abs(th - lastFitTh) > 1e-6) {
+        lastFitTh = th;
+        boxFit.makeEmpty();
+        function addPt(x, y, z) { pFit.set(x, y, z); boxFit.expandByPoint(pFit); }
+        addPt(0, 0, -DEPTH / 2); addPt(0, 0, DEPTH / 2);
+        addPt(base, 0, -DEPTH / 2); addPt(base, 0, DEPTH / 2);
+        addPt(base, height, -DEPTH / 2); addPt(base, height, DEPTH / 2);
+
+        var cosT = Math.cos(th), sinT = Math.sin(th);
+        var bx = block.position.x, by = block.position.y, bz = block.position.z;
+        for (var sx = -1; sx <= 1; sx += 2) {
+          for (var sy = -1; sy <= 1; sy += 2) {
+            for (var sz = -1; sz <= 1; sz += 2) {
+              var dx = sx * BW / 2, dy = sy * BH / 2;
+              addPt(bx + dx * cosT - dy * sinT, by + dx * sinT + dy * cosT, bz + sz * BD / 2);
+            }
+          }
+        }
+        addPt(origin.x, origin.y - st.G * KL, origin.z);
+        addPt(origin.x + dirN.x * st.N * KL, origin.y + dirN.y * st.N * KL, origin.z);
+        addPt(origin.x + dirF.x * st.f * KL, origin.y + dirF.y * st.f * KL, origin.z);
+
+        boxFit.getCenter(fitCenter);
+        boxFit.getSize(sizeFit);
+        /* 用最长轴的半长作为取景半径：比包围盒对角线更贴合，镜头更近且不出画 */
+        fitRadius = Math.max(1.8, 0.5 * Math.max(sizeFit.x, sizeFit.y * 1.25, sizeFit.z * 1.4));
+        camGoal.set(fitCenter.x, fitCenter.y - 0.06, fitCenter.z);
+      }
+
+      /* 读数 */
+      if (elVN) elVN.textContent = st.N.toFixed(2);
+      if (elVF) elVF.textContent = st.f.toFixed(2);
+      if (elVG) elVG.textContent = st.G.toFixed(2);
+      if (elPill) {
+        if (st.sliding) {
+          elPill.textContent = '加速下滑 · 滑动摩擦';
+          elPill.classList.add('slip');
+        } else {
+          elPill.textContent = '静止 · 静摩擦';
+          elPill.classList.remove('slip');
+        }
+      }
+      return st;
+    }
+
+    /* ---------- 相机 ---------- */
+    function updateCamera(dt, force) {
+      var k = force ? 1 : Math.min(1, dt * 6.5);
+      camTarget.lerp(camGoal, k);
+
+      var vHalf = T.MathUtils.degToRad(camera.fov) * 0.5;
+      var hHalf = Math.atan(Math.tan(vHalf) * camera.aspect);
+      var fitDist = fitRadius / Math.sin(Math.min(vHalf, hHalf)) * 1.06;
+      orbit.baseRadius = fitDist;
+
+      var r = orbit.baseRadius * orbit.zoom;
+      var sinP = Math.sin(orbit.phi), cosP = Math.cos(orbit.phi);
+      camPos.set(
+        camTarget.x + r * sinP * Math.sin(orbit.theta),
+        camTarget.y + r * cosP,
+        camTarget.z + r * sinP * Math.cos(orbit.theta)
+      );
+      camera.position.copy(camPos);
+      camera.lookAt(camTarget);
+    }
+
+    /* ---------- 交互：拖动旋转 / 滚轮缩放 ---------- */
+    var dragging = false, lastX = 0, lastY = 0;
+    var dom = renderer.domElement;
+
+    dom.addEventListener('pointerdown', function (e) {
+      if (!active) return;
+      camEase = null;
+      sideOff(false);
+      dragging = true;
+      lastX = e.clientX;
+      lastY = e.clientY;
+      try { dom.setPointerCapture(e.pointerId); } catch (err) {}
+      e.stopPropagation();
+    });
+
+    dom.addEventListener('pointermove', function (e) {
+      if (!dragging) return;
+      var dx = e.clientX - lastX;
+      var dy = e.clientY - lastY;
+      lastX = e.clientX;
+      lastY = e.clientY;
+      orbit.theta -= dx * 0.0055;
+      orbit.phi = Math.max(0.16, Math.min(1.48, orbit.phi - dy * 0.0045));
+      e.stopPropagation();
+    });
+
+    function endDrag(e) {
+      if (!dragging) return;
+      dragging = false;
+      try { dom.releasePointerCapture(e.pointerId); } catch (err) {}
+    }
+    dom.addEventListener('pointerup', endDrag);
+    dom.addEventListener('pointercancel', endDrag);
+
+    dom.addEventListener('wheel', function (e) {
+      if (!active) return;
+      e.preventDefault();
+      camEase = null;
+      sideOff(false);
+      orbit.zoom = Math.max(0.55, Math.min(2.0, orbit.zoom * (1 + e.deltaY * 0.0012)));
+    }, { passive: false });
+
+    /* ---------- 侧视角 ---------- */
+    function applySideUI(on) {
+      if (!elSide) return;
+      elSide.classList.toggle('on', on);
+      elSide.textContent = on ? '立体视角' : '侧视角';
+      if (elHint) elHint.textContent = on ? '标准侧视 · 拖动即返回立体视角' : '拖动旋转 · 滚轮缩放';
+    }
+
+    function sideOn() {
+      sideLock = true;
+      applySideUI(true);
+      orbit.zoom = 1;
+      camEase = { theta: 0, phi: SIDE_PHI };
+    }
+
+    function sideOff(restore) {
+      if (!sideLock) return;
+      sideLock = false;
+      applySideUI(false);
+      if (restore) camEase = { theta: 0.72, phi: 0.96 };
+    }
+
+    if (elSide) {
+      elSide.addEventListener('click', function () {
+        if (sideLock) { sideOff(true); } else { sideOn(); }
+      });
+    }
+
+    /* ---------- 坡度滑块 ---------- */
+    function paintSlider() {
+      if (elAng) elAng.textContent = angleDeg.toFixed(1);
+      if (elSlider) {
+        var pct = (angleDeg - 10) / 50 * 100;
+        elSlider.style.setProperty('--pct', pct + '%');
+        elSlider.value = String(angleDeg);
+      }
+      if (elCrit) elCrit.style.left = 'calc(' + ((CRIT_DEG - 10) / 50 * 100) + '% - 1px)';
+    }
+
+    function setAngle(deg, soft) {
+      var prevSliding = physics(angleRad).sliding;
+      angleDeg = Math.max(10, Math.min(60, deg));
+      angleRad = T.MathUtils.degToRad(angleDeg);
+      var nowSliding = physics(angleRad).sliding;
+      if (!prevSliding && nowSliding) {
+        slideDist = S_MAX;
+        slideVel = 0;
+        fadeState = 'slide';
+        applyFade(1);
+      }
+      if (prevSliding && !nowSliding) {
+        slideVel = 0;
+        fadeState = 'slide';
+        applyFade(1);
+      }
+      if (!prevSliding && !nowSliding) {
+        slideVel = 0;
+      }
+      paintSlider();
+      updateModel(angleRad);
+      /* 坡度一变就把取景距离一起算好，不依赖下一帧渲染回调 */
+      updateCamera(1, true);
+    }
+
+    if (elSlider) {
+      elSlider.addEventListener('input', function () {
+        setAngle(parseFloat(elSlider.value), false);
+      });
+    }
+
+    /* ---------- 重置 ---------- */
+    if (elReset) {
+      elReset.addEventListener('click', function () {
+        sideOff(false);
+        camEase = null;
+        orbit.theta = 0.72;
+        orbit.phi = 0.96;
+        orbit.zoom = 1;
+        slideDist = S_MIN + (S_MAX - S_MIN) * 0.80;
+        slideVel = 0;
+        fadeState = 'slide';
+        lastFitTh = -99;
+        applyFade(1);
+        setAngle(opts.angle != null ? opts.angle : 20, true);
+      });
+    }
+
+    /* ---------- 尺寸与画质 ---------- */
+    function resize() {
+      var w = sceneEl.clientWidth || 1;
+      var h = sceneEl.clientHeight || 1;
+      renderer.setSize(w, h, false);
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+    }
+
+    function setQuality(s) {
+      var q = Math.min(2, Math.max(0.75, (window.devicePixelRatio || 1) * s));
+      if (Math.abs(q - curQ) > 0.01) {
+        curQ = q;
+        renderer.setPixelRatio(q);
+        resize();
+      }
+    }
+
+    if (window.ResizeObserver) {
+      new ResizeObserver(resize).observe(sceneEl);
+    }
+
+    /* ---------- 每帧 ---------- */
+    function frame(dt) {
+      if (!active) return;
+
+      var th = angleRad;
+      var st = physics(th);
+
+      if (st.sliding) {
+        if (fadeState === 'slide') {
+          var a = GACC * SLOW * (Math.sin(th) - MUK * Math.cos(th));
+          slideVel += a * dt;
+          slideDist -= slideVel * dt;
+          if (slideDist <= S_MIN) {
+            slideDist = S_MIN;
+            slideVel = 0;
+            fadeState = 'out';
+          }
+        } else if (fadeState === 'out') {
+          applyFade(Math.max(0, fadeVal - dt / 0.3));
+          if (fadeVal <= 0) {
+            slideDist = S_MAX;
+            fadeState = 'in';
+          }
+        } else {
+          applyFade(Math.min(1, fadeVal + dt / 0.3));
+          if (fadeVal >= 1) fadeState = 'slide';
+        }
+        updateModel(th);
+      } else {
+        slideVel = 0;
+        fadeState = 'slide';
+        if (fadeVal < 1) applyFade(1);
+      }
+
+      if (camEase) {
+        var ks = Math.min(1, dt * 5);
+        orbit.theta += (camEase.theta - orbit.theta) * ks;
+        orbit.phi += (camEase.phi - orbit.phi) * ks;
+        if (Math.abs(camEase.theta - orbit.theta) < 0.004 && Math.abs(camEase.phi - orbit.phi) < 0.003) {
+          orbit.theta = camEase.theta;
+          orbit.phi = camEase.phi;
+          camEase = null;
+        }
+      }
+
+      grid.material.opacity = 0.55 * Math.max(0, Math.min(1, (1.40 - orbit.phi) / 0.30));
+
+      updateCamera(dt, false);
+      renderer.render(scene, camera);
+    }
+
+    /* ---------- 初始化 ---------- */
+    paintSlider();
+    updateModel(angleRad);
+    updateCamera(1, true);
+    resize();
+
+    var api = {
+      frame: frame,
+      resize: resize,
+      setQuality: setQuality,
+      setActive: function (v) {
+        active = v;
+        if (v) {
+          resize();
+          updateCamera(1, true);
+        }
+      }
+    };
+    instances.push(api);
+    return api;
+  }
+
+  /* ---------- 装配第 3、4 页 ---------- */
+  var s3 = document.getElementById('scene3');
+  var s4 = document.getElementById('scene4');
+  if (s3) createIncline(s3, s3.closest('.slide'), { angle: 20 });
+  if (s4) createIncline(s4, s4.closest('.slide'), { angle: 20 });
+
+  /* ---------- 统一调度 ---------- */
+  var lastT = 0;
+  function loop(now) {
+    var dt = lastT ? Math.min(0.05, (now - lastT) / 1000) : 0.016;
+    lastT = now;
+    for (var i = 0; i < instances.length; i++) instances[i].frame(dt);
+    requestAnimationFrame(loop);
+  }
+
+  window.DeckScenes = {
+    setActive: function (page) {
+      var els = [s3, s4];
+      instances.forEach(function (inst, i) {
+        var el = els[i];
+        inst.setActive(!!el && el.closest('.slide').getAttribute('data-page') === String(page));
+      });
+    },
+    onScale: function (s) {
+      instances.forEach(function (inst) { inst.setQuality(s); });
+    }
+  };
+
+  /* 起始页若就是 3D 页，立刻激活 */
+  var activePage = document.querySelector('.slide.on');
+  if (activePage) window.DeckScenes.setActive(activePage.getAttribute('data-page'));
+  window.DeckScenes.onScale(window.__deckScale || 1);
+
+  requestAnimationFrame(function (t) {
+    lastT = t;
+    requestAnimationFrame(loop);
+  });
+})();
+</script>
+</body>
+</html>
